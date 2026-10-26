@@ -1,0 +1,78 @@
+name: JalNyaya CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  test-and-build:
+    name: Build, Database Sync & Automated Testing
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: jalnyaya_db
+          MYSQL_USER: jalnyaya_user
+          MYSQL_PASSWORD: jalnyaya123
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Root Dependencies
+        run: npm ci || npm install
+
+      - name: Install Backend Dependencies
+        run: |
+          cd backend
+          npm ci || npm install
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm ci || npm install
+
+      - name: Setup Database Schema with Prisma
+        env:
+          DATABASE_URL: "mysql://jalnyaya_user:jalnyaya123@127.0.0.1:3306/jalnyaya_db"
+        run: |
+          npx prisma db push --schema=./prisma/schema.prisma
+          node prisma/seed.js
+
+      - name: Apply Database Views, Stored Procedures & Triggers
+        env:
+          MYSQL_PWD: jalnyaya123
+        run: |
+          mysql -h 127.0.0.1 -u jalnyaya_user jalnyaya_db < database/views.sql
+          mysql -h 127.0.0.1 -u root -prootpassword -e "SET GLOBAL log_bin_trust_function_creators = 1;"
+          mysql -h 127.0.0.1 -u jalnyaya_user jalnyaya_db < database/procedures.sql
+          mysql -h 127.0.0.1 -u jalnyaya_user jalnyaya_db < database/triggers.sql
+          mysql -h 127.0.0.1 -u jalnyaya_user jalnyaya_db < database/indexes.sql
+
+      - name: Run Backend Integration Tests (Industry Best Practice)
+        env:
+          DATABASE_URL: "mysql://jalnyaya_user:jalnyaya123@127.0.0.1:3306/jalnyaya_db"
+          JWT_SECRET: "ci_pipeline_secret_test_key_2026"
+          NODE_ENV: "test"
+        run: |
+          cd backend
+          npm test
+
+      - name: Build Frontend Production Artifacts
+        run: |
+          cd frontend
+          npm run build
