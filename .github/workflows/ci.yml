@@ -46,19 +46,15 @@ jobs:
           cd frontend
           npm ci || npm install
 
-      - name: Generate Prisma Client for Backend
-        run: |
-          npx prisma generate --schema=./prisma/schema.prisma
-          cd backend
-          npx prisma generate --schema=../prisma/schema.prisma
-
       - name: Setup Database Schema with Prisma
         env:
           DATABASE_URL: "mysql://jalnyaya_user:jalnyaya123@127.0.0.1:3306/jalnyaya_db"
         run: |
           npx prisma db push --schema=./prisma/schema.prisma
-          cd backend && npx prisma generate --schema=../prisma/schema.prisma
-          cd .. && node prisma/seed.js
+          npx prisma generate --schema=./prisma/schema.prisma
+          mkdir -p backend/node_modules/.prisma
+          cp -r node_modules/.prisma/* backend/node_modules/.prisma/ || true
+          node prisma/seed.js
 
       - name: Apply Database Views, Stored Procedures & Triggers
         env:
