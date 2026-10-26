@@ -1,0 +1,271 @@
+// JalNyaya - Water Tanker Distribution & Equity Tracker
+// Prisma Schema Definition for MySQL 8.0
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Roles Table
+// Predefined roles: RESIDENT, OPERATOR, ADMIN
+model Role {
+  role_id     Int      @id @default(autoincrement())
+  role_name   String   @unique @db.VarChar(50)
+  description String?  @db.VarChar(255)
+  users       User[]
+
+  @@map("roles")
+}
+
+// 2. Zones Table
+// Geographic grouping of panchayat streets
+model Zone {
+  zone_id     Int      @id @default(autoincrement())
+  zone_name   String   @unique @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  streets     Street[]
+
+  @@map("zones")
+}
+
+// 3. Streets Table
+// Primary geographical unit of distribution & fairness tracking
+model Street {
+  street_id          Int          @id @default(autoincrement())
+  street_name        String       @db.VarChar(120)
+  area_name          String       @db.VarChar(120)
+  panchayat_name     String       @db.VarChar(120)
+  population         Int
+  household_count    Int
+  zone_id            Int
+  last_delivery_date DateTime?
+  priority_score     Float        @default(0.0)
+  created_at         DateTime     @default(now())
+
+  // Relations
+  zone               Zone         @relation(fields: [zone_id], references: [zone_id], onDelete: Restrict)
+  users              User[]
+  households         Household[]
+  deliveries         Delivery[]
+  complaints         Complaint[]
+
+  @@index([zone_id])
+  @@map("streets")
+}
+
+// 4. Users Table (Single unified users table for Admin, Operator, Resident)
+model User {
+  user_id            Int                    @id @default(autoincrement())
+  name               String                 @db.VarChar(100)
+  email              String                 @unique @db.VarChar(120)
+  phone              String                 @db.VarChar(20)
+  password_hash      String                 @db.VarChar(255)
+  role_id            Int
+  street_id          Int?
+  is_active          Boolean                @default(true)
+  created_at         DateTime               @default(now())
+  updated_at         DateTime               @updatedAt
+
+  // Relations
+  role               Role                   @relation(fields: [role_id], references: [role_id], onDelete: Restrict)
+  street             Street?                @relation(fields: [street_id], references: [street_id], onDelete: SetNull)
+  tankers            Tanker[]               // tankers assigned to operator
+  deliveries         Delivery[]             // deliveries assigned to operator
+  confirmations      DeliveryConfirmation[] // confirmations submitted by resident
+  complaintsFiled    Complaint[]            @relation("ResidentComplaints")
+  complaintsAssigned Complaint[]            @relation("AssignedOperatorComplaints")
+  readingsRecorded   WaterLevelReading[]    // readings logged by user
+
+  @@index([role_id])
+  @@index([street_id])
+  @@map("users")
+}
+
+// 5. Households Table
+model Household {
+  household_id      Int      @id @default(autoincrement())
+  street_id         Int
+  head_name         String   @db.VarChar(100)
+  members_count     Int
+  phone             String   @db.VarChar(20)
+  water_requirement Int      // Daily requirement in litres
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  // Relations
+  street            Street   @relation(fields: [street_id], references: [street_id], onDelete: Cascade)
+
+  @@index([street_id])
+  @@map("households")
+}
+
+// 6. Tankers Table
+model Tanker {
+  tanker_id         Int        @id @default(autoincrement())
+  vehicle_number    String     @unique @db.VarChar(20)
+  capacity_litres   Int
+  operator_id       Int
+  status            String     @default("AVAILABLE") @db.VarChar(30) // AVAILABLE, IN_TRANSIT, MAINTENANCE, OUT_OF_SERVICE
+  last_service_date DateTime?
+  created_at        DateTime   @default(now())
+
+  // Relations
+  operator          User       @relation(fields: [operator_id], references: [user_id], onDelete: Restrict)
+  deliveries        Delivery[]
+
+  @@index([operator_id])
+  @@map("tankers")
+}
+
+// 7. Deliveries Table
+model Delivery {
+  delivery_id     Int                    @id @default(autoincrement())
+  tanker_id       Int
+  street_id       Int
+  operator_id     Int
+  scheduled_date  DateTime
+  delivery_date   DateTime?
+  quantity_litres Int
+  status          String                 @default("SCHEDULED") @db.VarChar(30) // SCHEDULED, COMPLETED, CANCELLED, DISPUTED
+  notes           String?                @db.Text
+  created_at      DateTime               @default(now())
+  updated_at      DateTime               @updatedAt
+
+  // Relations
+  tanker          Tanker                 @relation(fields: [tanker_id], references: [tanker_id], onDelete: Restrict)
+  street          Street                 @relation(fields: [street_id], references: [street_id], onDelete: Restrict)
+  operator        User                   @relation(fields: [operator_id], references: [user_id], onDelete: Restrict)
+  confirmations   DeliveryConfirmation[]
+  complaints      Complaint[]
+  alerts          Alert[]
+  payments        Payment[]
+
+  @@index([street_id])
+  @@index([operator_id])
+  @@index([tanker_id])
+  @@index([delivery_date])
+  @@index([status])
+  @@map("deliveries")
+}
+
+// 8. DeliveryConfirmations Table (Anti-fraud verification)
+model DeliveryConfirmation {
+  confirmation_id   Int      @id @default(autoincrement())
+  delivery_id       Int
+  resident_id       Int
+  confirmed         Boolean  // true = Confirmed, false = Not Received (causes Dispute)
+  confirmation_time DateTime @default(now())
+  remarks           String?  @db.VarChar(255)
+
+  // Relations
+  delivery          Delivery @relation(fields: [delivery_id], references: [delivery_id], onDelete: Cascade)
+  resident          User     @relation(fields: [resident_id], references: [user_id], onDelete: Restrict)
+
+  @@index([delivery_id])
+  @@index([resident_id])
+  @@map("delivery_confirmations")
+}
+
+// 9. Complaints Table with 48h SLA Target
+model Complaint {
+  complaint_id         Int       @id @default(autoincrement())
+  resident_id          Int
+  street_id            Int
+  delivery_id          Int?
+  complaint_type       String    @db.VarChar(50) // MISSED_DELIVERY, INSUFFICIENT_QUANTITY, WATER_QUALITY, TIMING_ISSUE, OPERATOR_BEHAVIOUR, OTHER
+  description          String    @db.Text
+  status               String    @default("OPEN") @db.VarChar(30) // OPEN, IN_PROGRESS, RESOLVED, REJECTED
+  priority             String    @default("MEDIUM") @db.VarChar(20) // LOW, MEDIUM, HIGH, URGENT
+  created_at           DateTime  @default(now())
+  resolved_at          DateTime?
+  assigned_operator_id Int?
+
+  // Relations
+  resident             User      @relation("ResidentComplaints", fields: [resident_id], references: [user_id], onDelete: Restrict)
+  street               Street    @relation(fields: [street_id], references: [street_id], onDelete: Restrict)
+  delivery             Delivery? @relation(fields: [delivery_id], references: [delivery_id], onDelete: SetNull)
+  assignedOperator     User?     @relation("AssignedOperatorComplaints", fields: [assigned_operator_id], references: [user_id], onDelete: SetNull)
+
+  @@index([street_id])
+  @@index([resident_id])
+  @@index([status])
+  @@index([created_at])
+  @@index([assigned_operator_id])
+  @@map("complaints")
+}
+
+// 10. WaterSources Table
+model WaterSource {
+  source_id            Int                 @id @default(autoincrement())
+  source_name          String              @db.VarChar(120)
+  source_type          String              @db.VarChar(50) // BOREWELL, OPEN_WELL, LAKE, OVERHEAD_TANK, RESERVOIR
+  location             String              @db.VarChar(150)
+  capacity_litres      Int
+  current_level_litres Int
+  status               String              @default("ACTIVE") @db.VarChar(30) // ACTIVE, DEPLETED, CONTAMINATED, MAINTENANCE
+  created_at           DateTime            @default(now())
+
+  // Relations
+  readings             WaterLevelReading[]
+  alerts               Alert[]
+
+  @@map("water_sources")
+}
+
+// 11. WaterLevelReadings Table (Monitors source depletion)
+model WaterLevelReading {
+  reading_id       Int         @id @default(autoincrement())
+  source_id        Int
+  reading_date     DateTime    @default(now())
+  level_litres     Int
+  percentage_level Float
+  recorded_by      Int
+
+  // Relations
+  source           WaterSource @relation(fields: [source_id], references: [source_id], onDelete: Cascade)
+  recorder         User        @relation(fields: [recorded_by], references: [user_id], onDelete: Restrict)
+
+  @@index([source_id, reading_date])
+  @@map("water_level_readings")
+}
+
+// 12. Alerts Table
+model Alert {
+  alert_id    Int          @id @default(autoincrement())
+  source_id   Int?
+  delivery_id Int?
+  alert_type  String       @db.VarChar(50) // LOW_WATER_LEVEL, CRITICAL_WATER_LEVEL, DELIVERY_DISPUTE, SLA_BREACH, EMERGENCY
+  message     String       @db.Text
+  severity    String       @db.VarChar(20) // INFO, WARNING, CRITICAL
+  created_at  DateTime     @default(now())
+  resolved    Boolean      @default(false)
+
+  // Relations
+  source      WaterSource? @relation(fields: [source_id], references: [source_id], onDelete: SetNull)
+  delivery    Delivery?    @relation(fields: [delivery_id], references: [delivery_id], onDelete: SetNull)
+
+  @@index([resolved])
+  @@index([alert_type])
+  @@map("alerts")
+}
+
+// 13. Payments Table
+model Payment {
+  payment_id       Int      @id @default(autoincrement())
+  delivery_id      Int
+  amount           Decimal  @db.Decimal(10, 2)
+  payment_date     DateTime @default(now())
+  payment_method   String   @db.VarChar(30) // CASH, UPI, BANK_TRANSFER, PANCHAYAT_VOUCHER
+  payment_status   String   @default("PAID") @db.VarChar(30) // PENDING, PAID, REFUNDED, FAILED
+  reference_number String?  @unique @db.VarChar(80)
+
+  // Relations
+  delivery         Delivery @relation(fields: [delivery_id], references: [delivery_id], onDelete: Cascade)
+
+  @@index([delivery_id])
+  @@map("payments")
+}
