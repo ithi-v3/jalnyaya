@@ -1,0 +1,22 @@
+{
+  "name": "jalnyaya-root",
+  "version": "1.0.0",
+  "description": "JalNyaya - Water Tanker Distribution & Equity Tracker",
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "db:push": "npx prisma db push --schema=prisma/schema.prisma",
+    "db:seed": "node prisma/seed.js",
+    "db:sql": "node database/apply_sql.js",
+    "test": "cd backend && npm test",
+    "postinstall": "npx prisma generate --schema=prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^18.0.9"
+  }
+}
