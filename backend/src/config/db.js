@@ -1,29 +1,8 @@
 // JalNyaya - Database Prisma Client Singleton Configuration
-let PrismaClient;
-try {
-  PrismaClient = require('@prisma/client').PrismaClient;
-} catch (err) {
-  try {
-    PrismaClient = require('../../../node_modules/@prisma/client').PrismaClient;
-  } catch (err2) {
-    throw err;
-  }
-}
+const { PrismaClient } = require('@prisma/client');
 
-let prisma;
-try {
-  prisma = new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-  });
-} catch (clientErr) {
-  try {
-    const RootPrisma = require('../../../node_modules/@prisma/client').PrismaClient;
-    prisma = new RootPrisma({
-      log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-    });
-  } catch (fallbackErr) {
-    throw clientErr;
-  }
-}
+const prisma = new PrismaClient({
+  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+});
 
 module.exports = prisma;

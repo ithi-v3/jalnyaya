@@ -6,12 +6,12 @@ WORKDIR /app
 # Copy root and backend package files
 COPY package*.json ./
 COPY backend/package*.json ./backend/
-COPY prisma ./prisma/
+COPY backend/prisma ./backend/prisma/
 
 # Install dependencies and generate Prisma Client
 RUN npm install
 RUN cd backend && npm install
-RUN npx prisma generate --schema=./prisma/schema.prisma
+RUN cd backend && npx prisma generate --schema=./prisma/schema.prisma
 
 # Copy source code
 COPY backend/ ./backend/
