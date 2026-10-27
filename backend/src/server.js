@@ -2,6 +2,7 @@
 const { execSync } = require('child_process');
 const app = require('./app');
 const prisma = require('./config/db');
+const { ensureViewsExist } = require('./config/initViews');
 
 const PORT = process.env.PORT || 5000;
 
@@ -28,6 +29,9 @@ async function autoInitDatabase() {
         console.log('✔ Initial data seeded successfully.');
       }
     }
+
+    // Always ensure database analytical views exist
+    await ensureViewsExist(prisma);
   } catch (initErr) {
     console.warn('⚠ Database auto-init check notice:', initErr.message);
   }
@@ -39,7 +43,7 @@ async function startServer() {
     await prisma.$connect();
     console.log('✔ Connected to MySQL Database');
 
-    // Auto-initialize schema & seed if running on fresh cloud DB
+    // Auto-initialize schema, seed & views if running on fresh cloud DB
     await autoInitDatabase();
 
     app.listen(PORT, () => {
