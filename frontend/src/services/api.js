@@ -1,5 +1,12 @@
 // JalNyaya - Centralized Frontend API Service
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+function getApiBase() {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (!envUrl) return '/api';
+  const trimmed = envUrl.replace(/\/+$/, '');
+  return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
+}
+
+const API_BASE = getApiBase();
 
 function getAuthHeaders() {
   const token = localStorage.getItem('jalnyaya_token');

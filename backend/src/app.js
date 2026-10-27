@@ -31,7 +31,7 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
+app.get(['/health', '/api/health'], (req, res) => {
   res.json({
     status: 'ONLINE',
     system: 'JalNyaya Water Tanker Distribution & Equity Tracker',
@@ -39,8 +39,9 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Mount Main API Routes
+// Mount Main API Routes (support both /api and root paths)
 app.use('/api', apiRoutes);
+app.use('/', apiRoutes);
 
 // Catch 404s
 app.use(notFoundHandler);
